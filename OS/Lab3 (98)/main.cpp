@@ -102,12 +102,6 @@ int main()
     std::cin >> nArr;
 
     arr = new int[nArr];
-    if (!arr)
-    {
-        logError("Couldn't allocate resources", "Out of memory!");
-        return 0;
-    }
-
 
     hThreads = new HANDLE[totalThreads];
     params = new threadParams[totalThreads];
@@ -116,7 +110,7 @@ int main()
     for (int i = 0; i < nArr; ++i) arr[i] = 0;
     for (int i = 0; i < totalThreads; ++i) terminatedFlags[i] = false;
 
-    if (!hThreads || !params)
+    if (!hThreads)
     {
         logError("Couldn't allocate resources", "Out of memory!");
     }
@@ -129,11 +123,15 @@ int main()
                 NULL,
                 0,
                 markerThread,
-                static_cast<void*>(&params[i - 1]),
+                &params[i - 1],
                 0,
                 NULL
         );
-        if (!hThreads[i - 1]) logErrorWin32("Creating marker thread");
+        if (!hThreads[i - 1])
+        {
+            logErrorWin32("Creating marker thread");
+            return -1;
+        }
     }
 
     InitializeCriticalSection(&csMarkElement);
