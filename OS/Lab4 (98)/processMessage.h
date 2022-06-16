@@ -24,20 +24,20 @@ public:
         return message;
     }
 
-    friend std::ofstream& operator<<(std::ofstream& ofs, const ProcessMessage& processMessage);
-    friend std::ifstream& operator>>(std::ifstream& ifs, ProcessMessage& processMessage);
+    friend std::fstream& operator<<(std::fstream& ofs, const ProcessMessage& processMessage);
+    friend std::fstream& operator>>(std::fstream& ifs, ProcessMessage& processMessage);
 
 private:
     char message[20];
 };
 
-std::ofstream &operator<<(std::ofstream &ofs, const ProcessMessage &processMessage)
+std::fstream &operator<<(std::fstream &ofs, const ProcessMessage &processMessage)
 {
     ofs.write((const char*)&processMessage, sizeof(ProcessMessage));
     return ofs;
 }
 
-std::ifstream &operator>>(std::ifstream &ifs, ProcessMessage &processMessage)
+std::fstream &operator>>(std::fstream &ifs, ProcessMessage &processMessage)
 {
     ifs.read((char*)& processMessage, sizeof(ProcessMessage));
     return ifs;
