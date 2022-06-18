@@ -6,6 +6,11 @@
 #include "errors.h"
 #include "employee.h"
 #include "windows.h"
+#include "entryState.h"
+
+int employeesCount;
+int clientsCount;
+std::string binaryFileName;
 
 CRITICAL_SECTION csFileWrite;
 CRITICAL_SECTION csBlockedFlags;
@@ -14,9 +19,9 @@ HANDLE hStartAllEvent;
 
 std::vector<HANDLE> hReadyEvents;
 std::vector<HANDLE> hServerThreads;
-std::vector<bool> entryBlockedFlags;
+std::vector<EntryState> entryStates;
 
-void prepareBinaryFile(int employeesCount, std::string& binaryFileName)
+void prepareBinaryFile()
 {
     std::fstream fout(binaryFileName.c_str(), std::ios::binary | std::ios::out);
     std::ostringstream prefix;
@@ -36,6 +41,21 @@ void prepareBinaryFile(int employeesCount, std::string& binaryFileName)
         prefix.str("");
         prefix.clear();
     }
+}
+
+int findEmployeeInFile(int id)
+{
+    std::fstream fs(binaryFileName.c_str(), std::ios::binary | std::ios::in);
+    Employee emp;
+    for (int i = 0; i < employeesCount; ++i)
+    {
+        fs >> emp;
+        if (emp.id == id)
+        {
+            return i;
+        }
+    }
+    return -1;
 }
 
 bool createClient(int clientID)
@@ -70,12 +90,12 @@ bool createClient(int clientID)
     return createOk;
 }
 
-bool prepareSyncObjects(int clientsCount)
+bool prepareSyncObjects()
 {
     InitializeCriticalSection(&csBlockedFlags);
     InitializeCriticalSection(&csFileWrite);
     hStartAllEvent = CreateEvent(NULL, TRUE, FALSE, startAllEventName.c_str());
-    entryBlockedFlags = std::vector<bool>(clientsCount);
+    entryStates = std::vector<EntryState>(clientsCount);
     if (hStartAllEvent == NULL)
     {
         logErrorWin32("CreateEvent failed!");
@@ -84,9 +104,9 @@ bool prepareSyncObjects(int clientsCount)
     return true;
 }
 
-bool prepareWin32(int clientsCount)
+bool prepareWin32()
 {
-    bool syncObjPrepared = prepareSyncObjects(clientsCount);
+    bool syncObjPrepared = prepareSyncObjects();
     bool clientsPrepared = true;
 
     hReadyEvents = std::vector<HANDLE>(clientsCount);
@@ -104,7 +124,7 @@ bool prepareWin32(int clientsCount)
     return syncObjPrepared && clientsPrepared;
 }
 
-void cleanWin32(int clientsCount)
+void cleanWin32()
 {
     for (int i = 0; i < clientsCount; ++i)
     {
@@ -118,10 +138,96 @@ void cleanWin32(int clientsCount)
 
 DWORD WINAPI processingThread(LPVOID params)
 {
+    HANDLE hPipe = params;
+    bool readSuccess = false;
+    bool sendSuccess = false;
+    char message[MESSAGE_MAX_SIZE];
+    int id;
+    Employee emp;
 
+    while (true)
+    {
+        DWORD cbRead;
+        DWORD cbWritten;
+        bool allowModify = false;
+
+        readSuccess = ReadFile(hPipe, message, MESSAGE_MAX_SIZE, &cbRead, NULL);
+        if (!readSuccess)
+        {
+            logErrorWin32("Failed to read the message!");
+            break;
+        }
+
+        id = std::atoi(message + 2);
+        EnterCriticalSection(&csFileWrite);
+        int posInFile = findEmployeeInFile(id);
+        if (posInFile != -1)
+        {
+            std::fstream fs(binaryFileName.c_str(), std::ios::binary | std::ios::in);
+            fs.seekg(posInFile * sizeof(Employee));
+            fs >> emp;
+        }
+        else emp.id = -1;
+        LeaveCriticalSection(&csFileWrite);
+
+        EnterCriticalSection(&csBlockedFlags);
+        switch (message[0])
+        {
+            case 'r':
+            {
+                if (posInFile != -1) entryStates[posInFile] = IS_BEING_READ;
+                break;
+            }
+            case 'w':
+            {
+                if(posInFile != -1)
+                {
+                    if (entryStates[posInFile] == IS_BEING_READ) emp.clear();
+                    else
+                    {
+                        entryStates[posInFile] = IS_BEING_MODIFIED;
+                        allowModify = true;
+                    }
+                }
+                break;
+            }
+            case 'c':
+            {
+                if (posInFile != -1) entryStates[posInFile] = IS_FREE;
+                break;
+            }
+        }
+        LeaveCriticalSection(&csBlockedFlags);
+
+        sendSuccess = WriteFile(hPipe, &emp, sizeof(Employee), &cbWritten, NULL);
+        if (!sendSuccess)
+        {
+            logErrorWin32("Failed to send the message!");
+            break;
+        }
+
+        if (message[0] == 'w' && allowModify)
+        {
+            readSuccess = ReadFile(hPipe, &emp, sizeof(Employee), &cbRead, NULL);
+            if (!readSuccess)
+            {
+                logErrorWin32("Failed to read client's answer");
+                break;
+            }
+            if (posInFile != - 1)
+            {
+                EnterCriticalSection(&csFileWrite);
+                std::fstream fs(binaryFileName.c_str(), std::ios::binary | std::ios::out);
+                fs.seekg(posInFile * sizeof(Employee));
+                fs << emp;
+                fs.close();
+                LeaveCriticalSection(&csFileWrite);
+            }
+        }
+    }
 }
 
-bool makeConnection(int clientsCount)
+bool makeConnection()
 {
     hServerThreads = std::vector<HANDLE>(clientsCount);
     HANDLE hPipe;
@@ -165,10 +271,6 @@ bool makeConnection(int clientsCount)
 
 int main()
 {
-    int employeesCount;
-    int clientsCount;
-    std::string binaryFileName;
-
     std::cout << "Enter the number of employees : ";
     std::cin >> employeesCount;
     std::cout << "Enter the number of clients : ";
@@ -178,9 +280,9 @@ int main()
 
     consoleMessage("Creating binary file.");
     consoleMessage("Please enter all entries : ");
-    prepareBinaryFile(employeesCount, binaryFileName);
+    prepareBinaryFile();
 
-    bool prepareWin32OK = prepareWin32(clientsCount);
+    bool prepareWin32OK = prepareWin32();
     if (!prepareWin32OK)
     {
         consoleMessage("Something went wrong while preparing Win32 stuff!");
@@ -196,7 +298,7 @@ int main()
     consoleMessage("All clients are ready. Starting...");
     SetEvent(hStartAllEvent);
 
-    bool connectionOK = makeConnection(clientsCount);
+    bool connectionOK = makeConnection();
     if (!connectionOK)
     {
         consoleMessage("Something went wrong while establishing server-client connections!");
@@ -207,6 +309,6 @@ int main()
         consoleMessage("All clients connected successfully.");
     }
 
-    cleanWin32(clientsCount);
+    cleanWin32();
     return 0;
 }

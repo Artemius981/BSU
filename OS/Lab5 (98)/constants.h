@@ -4,6 +4,7 @@
 #include <string>
 
 const std::string CONSOLE_PREFIX = "[*]";
+const int MESSAGE_MAX_SIZE = 16;
 
 const std::string creatorName = "Artemius981";
 

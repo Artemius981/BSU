@@ -3,7 +3,14 @@
 
 class Employee{
 public:
-    Employee() : id(), name(), hours() {}
+    Employee() : id(-1), name(), hours() {}
+
+    void clear()
+    {
+        id = -1;
+        for (int i = 0; i < 10; i++) name[i] = 0;
+        hours = 0.0;
+    }
 
     friend std::fstream& operator<<(std::fstream& fs, const Employee& emp);
     friend std::fstream& operator>>(std::fstream& fs, Employee& emp);
