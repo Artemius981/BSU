@@ -12,6 +12,13 @@ public:
         hours = 0.0;
     }
 
+    void print(std::ostream& os)
+    {
+        os << "ID : " << id << std::endl;
+        os << "Name : " << name << std::endl;
+        os << "Hours : " << hours << std::endl;
+    }
+
     friend std::fstream& operator<<(std::fstream& fs, const Employee& emp);
     friend std::fstream& operator>>(std::fstream& fs, Employee& emp);
 

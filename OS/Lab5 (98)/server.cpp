@@ -43,6 +43,18 @@ void prepareBinaryFile()
     }
 }
 
+void printBinaryFile()
+{
+    Employee emp;
+    std::fstream fs(binaryFileName.c_str(), std::ios::binary | std::ios::in);
+    for (int i = 0; i < employeesCount; ++i)
+    {
+        fs >> emp;
+        emp.print(std::cout);
+        std::cout << std::endl;
+    }
+}
+
 int findEmployeeInFile(int id)
 {
     std::fstream fs(binaryFileName.c_str(), std::ios::binary | std::ios::in);
@@ -169,7 +181,6 @@ DWORD WINAPI processingThread(LPVOID params)
         }
         else emp.id = -1;
         LeaveCriticalSection(&csFileWrite);
-
         EnterCriticalSection(&csBlockedFlags);
         switch (message[0])
         {
@@ -198,7 +209,7 @@ DWORD WINAPI processingThread(LPVOID params)
             }
         }
         LeaveCriticalSection(&csBlockedFlags);
-
+        if (message[0] == 'c') continue;
         sendSuccess = WriteFile(hPipe, &emp, sizeof(Employee), &cbWritten, NULL);
         if (!sendSuccess)
         {
@@ -218,13 +229,19 @@ DWORD WINAPI processingThread(LPVOID params)
             {
                 EnterCriticalSection(&csFileWrite);
                 std::fstream fs(binaryFileName.c_str(), std::ios::binary | std::ios::out);
-                fs.seekg(posInFile * sizeof(Employee));
+                fs.seekp(posInFile * sizeof(Employee));
                 fs << emp;
                 fs.close();
                 LeaveCriticalSection(&csFileWrite);
+                EnterCriticalSection(&csBlockedFlags);
+                entryStates[posInFile] = IS_FREE;
+                LeaveCriticalSection(&csBlockedFlags);
             }
         }
     }
+    FlushFileBuffers(hPipe);
+    DisconnectNamedPipe(hPipe);
+    CloseHandle(hPipe);
 }
 
 bool makeConnection()
@@ -308,7 +325,12 @@ int main()
     {
         consoleMessage("All clients connected successfully.");
     }
-
+    WaitForMultipleObjects(clientsCount, hServerThreads.data(), TRUE, INFINITE);
+    consoleMessage("Final file : ");
+    printBinaryFile();
     cleanWin32();
+
+    consoleMessage("Bye! o/");
+    system("pause");
     return 0;
 }
